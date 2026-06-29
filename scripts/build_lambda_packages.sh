@@ -47,10 +47,10 @@ build_lambda_package() {
     PACKAGE_DIR="$BUILD_DIR/$job_name"
     mkdir -p "$PACKAGE_DIR"
 
-    # Install dependencies (excluding dev dependencies)
+    # Install dependencies (excluding dev dependencies and sipap-common)
     echo "Installing dependencies..."
     pip install \
-        -r requirements.txt \
+        -r requirements-lambda.txt \
         -t "$PACKAGE_DIR" \
         --no-cache-dir \
         --platform manylinux2014_aarch64 \
@@ -67,8 +67,19 @@ build_lambda_package() {
     find "$PACKAGE_DIR" -type f -name "*.pyo" -delete
     find "$PACKAGE_DIR" -type f -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
 
-    # Copy source code
-    echo "Copying source code..."
+    # Copy sipap-common source code
+    echo "Copying sipap-common..."
+    SIPAP_COMMON_DIR="$REPO_ROOT/../sipap-common/src/sipap_common"
+    if [ -d "$SIPAP_COMMON_DIR" ]; then
+        cp -r "$SIPAP_COMMON_DIR" "$PACKAGE_DIR/"
+    else
+        echo -e "${RED}ERROR: sipap-common not found at $SIPAP_COMMON_DIR${NC}"
+        echo "Please ensure sipap-common is cloned at: $REPO_ROOT/../sipap-common"
+        exit 1
+    fi
+
+    # Copy batch-scraper source code
+    echo "Copying sipap-batch-scraper source code..."
     cp -r src/sipap_batch_scraper "$PACKAGE_DIR/"
 
     # Create zip file

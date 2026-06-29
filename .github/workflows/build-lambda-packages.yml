@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/**'
       - 'requirements.txt'
+      - 'requirements-lambda.txt'
       - 'scripts/build_lambda_packages.sh'
       - '.github/workflows/build-lambda-packages.yml'
   workflow_dispatch:
@@ -32,8 +33,16 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout repository
+      - name: Checkout batch-scraper repository
         uses: actions/checkout@v4
+        with:
+          path: sipap-batch-scraper
+
+      - name: Checkout sipap-common repository
+        uses: actions/checkout@v4
+        with:
+          repository: odirasamuel/sipap-common
+          path: sipap-common
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -65,6 +74,9 @@ jobs:
           echo "=============================================="
           echo ""
 
+          # Change to batch-scraper directory
+          cd sipap-batch-scraper
+
           # Create output directory
           mkdir -p lambda_packages
           BUILD_DIR=$(mktemp -d)
@@ -81,10 +93,10 @@ jobs:
             PACKAGE_DIR="$BUILD_DIR/$job_name"
             mkdir -p "$PACKAGE_DIR"
 
-            # Install dependencies for ARM64
+            # Install dependencies for ARM64 (using requirements-lambda.txt)
             echo "Installing dependencies..."
             pip install \
-              -r requirements.txt \
+              -r requirements-lambda.txt \
               -t "$PACKAGE_DIR" \
               --no-cache-dir \
               --platform manylinux2014_aarch64 \
@@ -100,15 +112,19 @@ jobs:
             find "$PACKAGE_DIR" -type f -name "*.pyc" -delete
             find "$PACKAGE_DIR" -type f -name "*.pyo" -delete
 
-            # Copy source code
-            echo "Copying source code..."
+            # Copy sipap-common source code
+            echo "Copying sipap-common..."
+            cp -r "$GITHUB_WORKSPACE/sipap-common/src/sipap_common" "$PACKAGE_DIR/"
+
+            # Copy batch-scraper source code
+            echo "Copying sipap-batch-scraper source code..."
             cp -r src/sipap_batch_scraper "$PACKAGE_DIR/"
 
             # Create zip file
             echo "Creating zip archive..."
             cd "$PACKAGE_DIR"
-            zip -r "$GITHUB_WORKSPACE/$output_zip" . -q
-            cd "$GITHUB_WORKSPACE"
+            zip -r "$GITHUB_WORKSPACE/sipap-batch-scraper/$output_zip" . -q
+            cd "$GITHUB_WORKSPACE/sipap-batch-scraper"
 
             # Get zip file size
             ZIP_SIZE=$(du -h "$output_zip" | cut -f1)
