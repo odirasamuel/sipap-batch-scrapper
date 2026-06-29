@@ -19,14 +19,14 @@ Add the following secret to the sipap-batch-scraper repository:
 - **Value**: Get from cicd_infra terraform output
 
 ```bash
-cd /Users/charlesotuya/AI-Odi/sentinel/sipap/repos/sipap-terraform/cicd_infra
+cd AI-Odi/sentinel/sipap/repos/sipap-terraform/cicd_infra
 terraform output github_actions_role_arn
 ```
 
 ### 2. Deploy CI/CD Infrastructure (One-Time)
 
 ```bash
-cd /Users/charlesotuya/AI-Odi/sentinel/sipap/repos/sipap-terraform/cicd_infra
+cd AI-Odi/sentinel/sipap/repos/sipap-terraform/cicd_infra
 
 # Initialize and deploy S3 bucket for Lambda packages
 terraform init

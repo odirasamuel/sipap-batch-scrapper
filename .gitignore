@@ -214,3 +214,6 @@ logs/
 # GitHub Actions local testing
 act/
 .actrc
+
+test_api_integration.py
+test_live_scrapers.py

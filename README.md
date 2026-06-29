@@ -1,6 +1,6 @@
 # SIPAP Batch Data Collection (API-Based)
 
-**Proactive sports data collection via free-tier APIs for SIPAP platform**
+**Proactive sports data collection via APIs for SIPAP platform**
 
 Version: 0.2.0 (API-Based Architecture v2.3)
 Status: In Development
@@ -559,24 +559,11 @@ ssl_context = ssl.create_default_context(cafile=certifi.where())
 
 ---
 
-## Next Steps
-
-- [✅] Implement API clients (Football-Data.org, The Odds API, TheSportsDB) - COMPLETED 2026-06-28
-- [✅] Test all API integrations - COMPLETED 2026-06-28
-- [✅] Build daily harvest job (orchestrate all 3 APIs) - COMPLETED 2026-06-28
-- [ ] Implement odds updater Lambda (30-minute refresh)
-- [ ] Implement fixture updater Lambda (hourly refresh)
-- [ ] Deploy to Fargate + EventBridge
-- [ ] Integrate with sipap-sports-data-mcp (read-only)
-
----
-
 ## References
 
-- **Architecture:** `/Users/charlesotuya/AI-Odi/sentinel/sipap/technical-architecture-v2.md` Section 2.6
-- **Fixture Extraction:** `FIXTURE-EXTRACTION.md` (this repository)
+- **Architecture:** `AI-Odi/sentinel/sipap/technical-architecture-v2.md` Section 2.6
 - **API Integration Tests:** `test_api_integration.py` (this repository)
-- **Documentation Update Plan:** `/Users/charlesotuya/AI-Odi/sentinel/sipap/DOCUMENTATION-UPDATE-PLAN.md`
+- **Documentation Update Plan:** `AI-Odi/sentinel/sipap/DOCUMENTATION-UPDATE-PLAN.md`
 
 ---
 
