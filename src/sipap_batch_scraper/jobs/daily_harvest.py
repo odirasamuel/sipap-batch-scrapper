@@ -392,9 +392,31 @@ class DailyHarvestJob:
         assert self._aurora_client is not None
         assert self._redis_client is not None
 
+        # Transform fixtures to database schema format
+        # Map API field names to database column names
+        db_fixtures = []
+        for fixture in fixtures:
+            db_fixture = {
+                'external_id': fixture.get('external_id', fixture.get('id', '')),
+                'home_team': fixture.get('home_team', ''),
+                'away_team': fixture.get('away_team', ''),
+                'scheduled_at': fixture.get('scheduled_at', fixture.get('utc_date', '')),
+                'league': fixture.get('league', fixture.get('competition', '')),
+                'source': fixture.get('source', 'unknown'),
+            }
+            # Only add fixtures with required fields
+            if all([
+                db_fixture['external_id'],
+                db_fixture['home_team'],
+                db_fixture['away_team'],
+                db_fixture['scheduled_at'],
+                db_fixture['league']
+            ]):
+                db_fixtures.append(db_fixture)
+
         # Store in Aurora (batch insert)
-        if fixtures:
-            await self._aurora_client.batch_insert_matches(fixtures)
+        if db_fixtures:
+            await self._aurora_client.batch_insert_matches(db_fixtures)
 
         # Store in Redis (6-hour TTL)
         cache_data = {
