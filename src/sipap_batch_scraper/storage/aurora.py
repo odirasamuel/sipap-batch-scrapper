@@ -114,7 +114,7 @@ class AuroraClient:
                 match_data['scheduled_at'],
                 match_data['league'],
                 match_data['source'],
-                datetime.now(UTC)
+                datetime.now(UTC).replace(tzinfo=None)
             )
 
     async def upsert_match(self, match_data: dict[str, Any]) -> None:
@@ -140,7 +140,7 @@ class AuroraClient:
                 status = EXCLUDED.status,
                 updated_at = EXCLUDED.updated_at
         """
-        now = datetime.now(UTC)
+        now = datetime.now(UTC).replace(tzinfo=None)
         async with self._pool.acquire() as conn:
             await conn.execute(
                 query,
@@ -353,7 +353,7 @@ class AuroraClient:
                 match.get('home_score'),
                 match.get('away_score'),
                 match.get('venue'),
-                datetime.now(UTC)
+                datetime.now(UTC).replace(tzinfo=None)  # Timezone-naive UTC timestamp
             ))
 
         # Batch insert all matches
@@ -410,7 +410,7 @@ class AuroraClient:
                 team_stats['losses'],
                 team_stats['goals_scored'],
                 team_stats['goals_conceded'],
-                datetime.now(UTC)
+                datetime.now(UTC).replace(tzinfo=None)
             )
 
     async def query_matches(
@@ -508,7 +508,7 @@ class AuroraClient:
         odds_data = {
             'bookmakers': bookmakers,
             'best_odds': best_odds or {},
-            'updated_at': datetime.now(UTC).isoformat()
+            'updated_at': datetime.now(UTC).replace(tzinfo=None).isoformat()
         }
 
         query = """
@@ -650,7 +650,7 @@ class AuroraClient:
             standings_data = {
                 'season': season,
                 'table': table_data,
-                'updated_at': datetime.now(UTC).isoformat()
+                'updated_at': datetime.now(UTC).replace(tzinfo=None).isoformat()
             }
 
             # Try to update leagues table by UUID
