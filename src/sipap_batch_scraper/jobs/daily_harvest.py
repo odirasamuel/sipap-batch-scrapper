@@ -455,10 +455,16 @@ class DailyHarvestJob:
             }
 
         except Exception as e:
+            import traceback
             duration_ms = int((datetime.now(UTC) - start_time).total_seconds() * 1000)
+            error_msg = f"{type(e).__name__}: {str(e)}"
+            print(f"ERROR in daily_harvest: {error_msg}")
+            print(f"Traceback: {traceback.format_exc()}")
             return {
                 'status': 'error',
-                'error': str(e),
+                'error': error_msg,
+                'error_type': type(e).__name__,
+                'traceback': traceback.format_exc(),
                 'duration_ms': duration_ms,
             }
 
