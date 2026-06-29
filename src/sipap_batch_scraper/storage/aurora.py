@@ -297,3 +297,191 @@ class AuroraClient:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(query, team_id, season)
             return dict(row) if row else None
+
+    async def update_match_odds(
+        self,
+        external_id: str,
+        sport_id: int,
+        bookmakers: list[dict[str, Any]],
+        best_odds: dict[str, Any] | None = None
+    ) -> None:
+        """
+        Update betting odds for a match.
+
+        Stores odds data in the matches.metadata JSONB field under the 'odds' key.
+
+        Args:
+            external_id: External match ID from API
+            sport_id: Sport ID (1=soccer, 2=basketball, etc.)
+            bookmakers: List of bookmaker odds data
+            best_odds: Optional best odds summary (home, draw, away)
+
+        Example:
+            >>> await client.update_match_odds(
+            ...     external_id="abc123",
+            ...     sport_id=1,
+            ...     bookmakers=[
+            ...         {'name': 'bet365', 'home': 1.50, 'draw': 4.00, 'away': 6.00},
+            ...         {'name': 'william_hill', 'home': 1.55, 'draw': 3.90, 'away': 5.80}
+            ...     ],
+            ...     best_odds={'home': 1.55, 'draw': 4.00, 'away': 6.00}
+            ... )
+        """
+        assert self._pool is not None, "Must call connect() before update_match_odds()"
+
+        odds_data = {
+            'bookmakers': bookmakers,
+            'best_odds': best_odds or {},
+            'updated_at': datetime.now(UTC).isoformat()
+        }
+
+        query = """
+            UPDATE matches
+            SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{odds}',
+                $1::jsonb
+            )
+            WHERE external_id = $2 AND sport_id = $3
+        """
+
+        import json
+        async with self._pool.acquire() as conn:
+            await conn.execute(query, json.dumps(odds_data), external_id, sport_id)
+
+    async def update_fixtures(self, fixtures: list[dict[str, Any]]) -> None:
+        """
+        Update multiple fixture records.
+
+        Updates match status, scores, venue, and other fixture data.
+
+        Args:
+            fixtures: List of fixture dictionaries with keys:
+                - external_id: External match ID (required)
+                - sport_id: Sport ID (required)
+                - status: Match status (optional: 'scheduled', 'live', 'finished')
+                - home_score: Home team score (optional)
+                - away_score: Away team score (optional)
+                - venue: Match venue (optional)
+                - scheduled_at: Match time (optional)
+
+        Example:
+            >>> await client.update_fixtures([
+            ...     {
+            ...         'external_id': 'abc123',
+            ...         'sport_id': 1,
+            ...         'status': 'live',
+            ...         'home_score': 2,
+            ...         'away_score': 1
+            ...     }
+            ... ])
+        """
+        assert self._pool is not None, "Must call connect() before update_fixtures()"
+
+        for fixture in fixtures:
+            external_id = fixture.get('external_id')
+            sport_id = fixture.get('sport_id')
+
+            if not external_id or not sport_id:
+                continue
+
+            # Build dynamic update query based on provided fields
+            update_fields = []
+            params = []
+            param_count = 1
+
+            if 'status' in fixture:
+                update_fields.append(f"status = ${param_count}")
+                params.append(fixture['status'])
+                param_count += 1
+
+            if 'home_score' in fixture:
+                update_fields.append(f"home_score = ${param_count}")
+                params.append(fixture['home_score'])
+                param_count += 1
+
+            if 'away_score' in fixture:
+                update_fields.append(f"away_score = ${param_count}")
+                params.append(fixture['away_score'])
+                param_count += 1
+
+            if 'venue' in fixture:
+                update_fields.append(f"venue = ${param_count}")
+                params.append(fixture['venue'])
+                param_count += 1
+
+            if 'scheduled_at' in fixture:
+                update_fields.append(f"scheduled_at = ${param_count}")
+                params.append(fixture['scheduled_at'])
+                param_count += 1
+
+            if not update_fields:
+                continue  # Nothing to update for this fixture
+
+            # Add WHERE clause parameters
+            params.extend([external_id, sport_id])
+
+            query = f"""
+                UPDATE matches
+                SET {', '.join(update_fields)}
+                WHERE external_id = ${param_count} AND sport_id = ${param_count + 1}
+            """
+
+            async with self._pool.acquire() as conn:
+                await conn.execute(query, *params)
+
+    async def update_standings(self, standings: list[dict[str, Any]]) -> None:
+        """
+        Update league standings data.
+
+        Since there's no dedicated standings table, this stores standings
+        in the league metadata JSONB field.
+
+        Args:
+            standings: List of standings data with keys:
+                - league_id: League UUID (required)
+                - season: Season string (e.g., "2024-2025")
+                - table: List of team standings with position, points, wins, etc.
+
+        Example:
+            >>> await client.update_standings([
+            ...     {
+            ...         'league_id': 'uuid-here',
+            ...         'season': '2024-2025',
+            ...         'table': [
+            ...             {'position': 1, 'team': 'Arsenal', 'points': 50, ...},
+            ...             {'position': 2, 'team': 'Man City', 'points': 48, ...}
+            ...         ]
+            ...     }
+            ... ])
+        """
+        assert self._pool is not None, "Must call connect() before update_standings()"
+
+        import json
+
+        for standing in standings:
+            league_id = standing.get('league_id')
+            season = standing.get('season', '2024-2025')
+            table_data = standing.get('table', [])
+
+            if not league_id or not table_data:
+                continue
+
+            standings_data = {
+                'season': season,
+                'table': table_data,
+                'updated_at': datetime.now(UTC).isoformat()
+            }
+
+            query = """
+                UPDATE leagues
+                SET metadata = jsonb_set(
+                    COALESCE(metadata, '{}'::jsonb),
+                    '{standings}',
+                    $1::jsonb
+                )
+                WHERE id = $2
+            """
+
+            async with self._pool.acquire() as conn:
+                await conn.execute(query, json.dumps(standings_data), league_id)

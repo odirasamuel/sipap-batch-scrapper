@@ -153,36 +153,75 @@ class OddsUpdaterJob:
         assert self._aurora_client is not None
         assert self._redis_client is not None
 
-        # Update Aurora database (odds only, not full fixture)
-        for odds in odds_data:
-            # Extract match identifier
-            home_team = odds.get('home_team', '')
-            away_team = odds.get('away_team', '')
-            bookmakers = odds.get('bookmakers', [])
-            best_odds = odds.get('best_odds', {})
+        print(f"Updating odds for {len(odds_data)} matches")
 
-            if not home_team or not away_team:
+        # Update Aurora database with odds
+        for odds in odds_data:
+            external_id = odds.get('id')
+            bookmakers = odds.get('bookmakers', [])
+
+            if not external_id or not bookmakers:
                 continue
 
-            # Update odds in database
-            # Note: This would call a method like update_match_odds()
-            # For now, simplified implementation
-            await self._aurora_client.update_match_odds(  # type: ignore[attr-defined]
-                home_team=home_team,
-                away_team=away_team,
+            # Calculate best odds from all bookmakers
+            best_odds = self._calculate_best_odds(bookmakers)
+
+            # Update odds in database (sport_id=1 for soccer)
+            await self._aurora_client.update_match_odds(
+                external_id=external_id,
+                sport_id=1,  # Soccer
                 bookmakers=bookmakers,
-                best_odds=best_odds,
+                best_odds=best_odds
             )
 
-        # Refresh Redis cache (24-hour TTL for daily refresh)
+        # Cache odds data in Redis (24-hour TTL)
         cache_data = {
-            f"odds:{odds.get('id', '')}": odds
+            f"odds:{odds.get('id')}": odds
             for odds in odds_data
             if odds.get('id')
         }
 
         if cache_data:
-            await self._redis_client.batch_set(cache_data, ttl=86400)  # 24 hours
+            await self._redis_client.batch_set(cache_data, ttl=86400)
+            print(f"Successfully updated {len(cache_data)} odds in Aurora + Redis")
+
+    def _calculate_best_odds(self, bookmakers: list[dict[str, Any]]) -> dict[str, float]:
+        """
+        Calculate best available odds from all bookmakers.
+
+        Args:
+            bookmakers: List of bookmaker odds
+
+        Returns:
+            Dict with best odds for home, draw, away
+        """
+        best: dict[str, float] = {
+            'home': 0.0,
+            'draw': 0.0,
+            'away': 0.0
+        }
+
+        for bookmaker in bookmakers:
+            markets = bookmaker.get('markets', [])
+            for market in markets:
+                if market.get('key') != 'h2h':
+                    continue
+
+                outcomes = market.get('outcomes', [])
+                for outcome in outcomes:
+                    name = outcome.get('name', '').lower()
+                    price = float(outcome.get('price', 0))
+
+                    if 'draw' in name and price > best['draw']:
+                        best['draw'] = price
+                    elif price > 0:
+                        # First team is home, second is away
+                        if outcomes.index(outcome) == 0 and price > best['home']:
+                            best['home'] = price
+                        elif outcomes.index(outcome) == 1 and price > best['away']:
+                            best['away'] = price
+
+        return best
 
     async def _log_metrics(self, metrics: dict[str, Any]) -> None:
         """

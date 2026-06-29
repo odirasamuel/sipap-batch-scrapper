@@ -225,20 +225,21 @@ class FixtureUpdaterJob:
         assert self._aurora_client is not None
         assert self._redis_client is not None
 
-        # Update Aurora database
-        # Note: This would call a method like update_fixtures()
-        # For now, simplified implementation
-        await self._aurora_client.update_fixtures(fixture_data)  # type: ignore[attr-defined]
+        print(f"Updating {len(fixture_data)} fixtures")
 
-        # Refresh Redis cache (6-hour TTL for fixtures)
+        # Update Aurora database with fixture data
+        await self._aurora_client.update_fixtures(fixture_data)
+
+        # Cache fixture data in Redis (6-hour TTL)
         cache_data = {
-            f"fixture:{fixture.get('id', '')}": fixture
+            f"fixture:{fixture.get('id', fixture.get('external_id', ''))}": fixture
             for fixture in fixture_data
-            if fixture.get('id')
+            if fixture.get('id') or fixture.get('external_id')
         }
 
         if cache_data:
-            await self._redis_client.batch_set(cache_data, ttl=21600)  # 6 hours
+            await self._redis_client.batch_set(cache_data, ttl=21600)
+            print(f"Successfully updated {len(fixture_data)} fixtures in Aurora + Redis")
 
     async def _update_standings(self, standings_data: list[dict[str, Any]]) -> None:
         """
@@ -250,20 +251,22 @@ class FixtureUpdaterJob:
         assert self._aurora_client is not None
         assert self._redis_client is not None
 
-        # Update Aurora database
-        # Note: This would call a method like update_standings()
-        # For now, simplified implementation
-        await self._aurora_client.update_standings(standings_data)  # type: ignore[attr-defined]
+        print(f"Updating {len(standings_data)} league standings")
 
-        # Refresh Redis cache (6-hour TTL for standings)
+        # Update Aurora database with standings data
+        await self._aurora_client.update_standings(standings_data)
+
+        # Cache standings data in Redis (6-hour TTL)
         cache_data = {
-            f"standings:{standing.get('competition', {}).get('name', '')}": standing
+            f"standings:{standing.get('league_id', '')}:{standing.get('season', '2024-2025')}":
+                standing
             for standing in standings_data
-            if standing.get('competition', {}).get('name')
+            if standing.get('league_id')
         }
 
         if cache_data:
-            await self._redis_client.batch_set(cache_data, ttl=21600)  # 6 hours
+            await self._redis_client.batch_set(cache_data, ttl=21600)
+            print(f"Successfully updated {len(standings_data)} standings in Aurora + Redis")
 
     async def _log_metrics(self, metrics: dict[str, Any]) -> None:
         """
