@@ -279,7 +279,7 @@ class TestGetApiKeysWithFallback:
             'THESPORTSDB_KEY': '123',
         }
 
-        result = get_api_keys_with_fallback(env='dev')
+        get_api_keys_with_fallback(env='dev')
 
         # Should use Secrets Manager in ECS Fargate
         mock_get_api_keys.assert_called_once_with(env='dev')

@@ -9,8 +9,8 @@ This package provides clients for various sports data APIs:
 """
 
 from sipap_batch_scraper.apis.football_data import FootballDataAPI
-from sipap_batch_scraper.apis.odds_api import OddsAPI, SPORT_KEYS
-from sipap_batch_scraper.apis.thesportsdb import TheSportsDBClient, LEAGUE_IDS
+from sipap_batch_scraper.apis.odds_api import SPORT_KEYS, OddsAPI
+from sipap_batch_scraper.apis.thesportsdb import LEAGUE_IDS, TheSportsDBClient
 
 __all__ = [
     'FootballDataAPI',

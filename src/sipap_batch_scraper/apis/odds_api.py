@@ -63,9 +63,11 @@ class OddsAPI(BaseAPIClient):
         params = {'apiKey': self.api_key}
         response = await self._request('GET', '/sports', params=params)
 
+        # Response is a list in this case, not a dict
+        sports_list: list[Any] = response  # type: ignore[assignment]
         return [
             self._add_metadata(sport, 'the-odds-api')
-            for sport in response
+            for sport in sports_list
         ]
 
     async def get_odds(
@@ -100,7 +102,9 @@ class OddsAPI(BaseAPIClient):
         endpoint = f'/sports/{sport}/odds'
         response = await self._request('GET', endpoint, params=params)
 
-        return [self._transform_odds(event) for event in response]
+        # Response is a list of events
+        events_list: list[Any] = response  # type: ignore[assignment]
+        return [self._transform_odds(event) for event in events_list]
 
     async def get_event_odds(
         self,
@@ -164,9 +168,11 @@ class OddsAPI(BaseAPIClient):
         endpoint = f'/sports/{sport}/scores'
         response = await self._request('GET', endpoint, params=params)
 
+        # Response is a list of events
+        events_list: list[Any] = response  # type: ignore[assignment]
         return [
             self._add_metadata(event, 'the-odds-api')
-            for event in response
+            for event in events_list
         ]
 
     async def get_usage(self) -> dict[str, Any]:

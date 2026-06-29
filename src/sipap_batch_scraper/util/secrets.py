@@ -169,7 +169,7 @@ def get_api_keys_with_fallback(env: str = 'dev') -> dict[str, str]:
         >>> fd_key = keys['FOOTBALL_DATA_KEY']
     """
     # Check if running in AWS (Lambda/Fargate)
-    is_aws = os.getenv('AWS_EXECUTION_ENV') is not None or os.getenv('ECS_CONTAINER_METADATA_URI') is not None
+    is_aws = os.getenv('AWS_EXECUTION_ENV') is not None or os.getenv('ECS_CONTAINER_METADATA_URI') is not None  # noqa: E501
 
     if is_aws:
         # Running in AWS - use Secrets Manager

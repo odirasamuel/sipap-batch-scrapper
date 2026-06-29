@@ -102,9 +102,10 @@ class BaseAPIClient:
                     headers=default_headers,
                 ) as response:
                     response.raise_for_status()
-                    return await response.json()
+                    result: dict[str, Any] = await response.json()
+                    return result
 
-            except aiohttp.ClientError as e:
+            except aiohttp.ClientError:
                 if attempt == self.max_retries - 1:
                     raise
 
