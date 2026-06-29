@@ -86,8 +86,15 @@ class FixtureUpdaterJob:
         self._aurora_client = AuroraClient(**self.aurora_config)
         await self._aurora_client.connect()
 
-        # Redis client initialization would go here
-        # For now, simplified
+        # Initialize Redis client
+        from urllib.parse import urlparse
+        parsed = urlparse(self.redis_url)
+        self._redis_client = RedisClient(
+            host=parsed.hostname or 'localhost',
+            port=parsed.port or 6379,
+            db=0
+        )
+        await self._redis_client.connect()
 
     async def _cleanup_clients(self) -> None:
         """Cleanup all clients."""
@@ -98,7 +105,7 @@ class FixtureUpdaterJob:
         if self._aurora_client:
             await self._aurora_client.close()
         if self._redis_client:
-            pass  # Redis client cleanup
+            await self._redis_client.close()
 
     async def _fetch_fixtures(self) -> list[dict[str, Any]]:
         """

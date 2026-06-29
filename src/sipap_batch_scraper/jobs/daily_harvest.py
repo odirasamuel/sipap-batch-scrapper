@@ -288,9 +288,15 @@ class DailyHarvestJob:
         self._aurora_client = AuroraClient(**self.aurora_config)
         await self._aurora_client.connect()
 
-        # Redis client from URL
-        # Note: Simplified initialization, actual implementation would parse URL
-        # For now, assume redis_url contains necessary connection info
+        # Initialize Redis client
+        from urllib.parse import urlparse
+        parsed = urlparse(self.redis_url)
+        self._redis_client = RedisClient(
+            host=parsed.hostname or 'localhost',
+            port=parsed.port or 6379,
+            db=0
+        )
+        await self._redis_client.connect()
 
     async def _cleanup_clients(self) -> None:
         """Cleanup all API and storage clients."""
@@ -303,7 +309,7 @@ class DailyHarvestJob:
         if self._aurora_client:
             await self._aurora_client.close()
         if self._redis_client:
-            pass  # Redis client cleanup if needed
+            await self._redis_client.close()
 
     async def _fetch_fixtures(self) -> list[dict[str, Any]]:
         """
