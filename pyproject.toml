@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sipap-batch-scraper"
+version = "0.1.0"
+description = "SIPAP batch web scraper for proactive sports data collection"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    {name = "SIPAP Team", email = "charles@sipap.com"}
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+dependencies = [
+    "sipap-common>=0.1.0",
+    "playwright>=1.40.0",
+    "playwright-stealth>=1.0.5",
+    "scrapy>=2.11.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "httpx>=0.25.0",
+    "redis>=5.0.0",
+    "psycopg[binary]>=3.1.0",
+    "pydantic>=2.5.0",
+    "python-dateutil>=2.8.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-playwright>=0.4.0",
+    "mypy>=1.7.0",
+    "ruff>=0.1.6",
+    "types-beautifulsoup4>=4.12.0",
+    "types-redis>=4.6.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "--cov=src/sipap_batch_scraper --cov-report=term-missing"
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+files = ["src/sipap_batch_scraper"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+ignore = []

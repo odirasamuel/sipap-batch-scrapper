@@ -1,0 +1,218 @@
+name: Build & Upload Lambda Packages
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'requirements.txt'
+      - 'scripts/build_lambda_packages.sh'
+      - '.github/workflows/build-lambda-packages.yml'
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build even without changes'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: us-east-1
+  S3_BUCKET: sipap-lambda-packages-dev
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  build-and-upload:
+    name: Build Lambda Packages + Upload to S3
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SIPAP_DEV_AWS_ROLE_ARN }}
+          role-session-name: sipap-lambda-packages-build
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Verify AWS Identity
+        run: |
+          aws sts get-caller-identity
+          echo "AWS Region: $AWS_REGION"
+          echo "S3 Bucket: $S3_BUCKET"
+
+      - name: Install zip utility
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: Build Lambda Packages
+        run: |
+          echo "=============================================="
+          echo "Building Lambda deployment packages"
+          echo "Python Version: ${{ env.PYTHON_VERSION }}"
+          echo "Architecture: ARM64 (Graviton2)"
+          echo "=============================================="
+          echo ""
+
+          # Create output directory
+          mkdir -p lambda_packages
+          BUILD_DIR=$(mktemp -d)
+
+          # Function to build a Lambda package
+          build_lambda_package() {
+            local job_name=$1
+            local output_zip="lambda_packages/${job_name}.zip"
+
+            echo ""
+            echo "Building ${job_name} Lambda package..."
+
+            # Create package directory
+            PACKAGE_DIR="$BUILD_DIR/$job_name"
+            mkdir -p "$PACKAGE_DIR"
+
+            # Install dependencies for ARM64
+            echo "Installing dependencies..."
+            pip install \
+              -r requirements.txt \
+              -t "$PACKAGE_DIR" \
+              --no-cache-dir \
+              --platform manylinux2014_aarch64 \
+              --only-binary=:all: \
+              --python-version ${{ env.PYTHON_VERSION }} \
+              --implementation cp \
+              --upgrade
+
+            # Remove unnecessary files to reduce package size
+            echo "Cleaning up unnecessary files..."
+            find "$PACKAGE_DIR" -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true
+            find "$PACKAGE_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+            find "$PACKAGE_DIR" -type f -name "*.pyc" -delete
+            find "$PACKAGE_DIR" -type f -name "*.pyo" -delete
+
+            # Copy source code
+            echo "Copying source code..."
+            cp -r src/sipap_batch_scraper "$PACKAGE_DIR/"
+
+            # Create zip file
+            echo "Creating zip archive..."
+            cd "$PACKAGE_DIR"
+            zip -r "$GITHUB_WORKSPACE/$output_zip" . -q
+            cd "$GITHUB_WORKSPACE"
+
+            # Get zip file size
+            ZIP_SIZE=$(du -h "$output_zip" | cut -f1)
+            echo "✓ Package created: $output_zip (${ZIP_SIZE})"
+          }
+
+          # Build both packages
+          build_lambda_package "odds_updater"
+          build_lambda_package "fixture_updater"
+
+          # Cleanup
+          rm -rf "$BUILD_DIR"
+
+          echo ""
+          echo "✓ Lambda packages built successfully!"
+          ls -lh lambda_packages/
+
+      - name: Upload Lambda Packages to S3
+        run: |
+          echo ""
+          echo "Uploading Lambda packages to S3..."
+          echo "Bucket: s3://${S3_BUCKET}/batch-scraper/"
+          echo ""
+
+          # Upload odds_updater
+          aws s3 cp lambda_packages/odds_updater.zip \
+            s3://${S3_BUCKET}/batch-scraper/odds_updater.zip \
+            --metadata "git-commit=${{ github.sha }},build-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "✓ Uploaded odds_updater.zip"
+
+          # Upload fixture_updater
+          aws s3 cp lambda_packages/fixture_updater.zip \
+            s3://${S3_BUCKET}/batch-scraper/fixture_updater.zip \
+            --metadata "git-commit=${{ github.sha }},build-time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          echo "✓ Uploaded fixture_updater.zip"
+
+          echo ""
+          echo "✓ All packages uploaded to S3"
+
+      - name: Get S3 Object Versions
+        id: s3-versions
+        run: |
+          echo ""
+          echo "Retrieving S3 object versions..."
+
+          ODDS_VERSION=$(aws s3api head-object \
+            --bucket ${S3_BUCKET} \
+            --key batch-scraper/odds_updater.zip \
+            --query 'VersionId' \
+            --output text)
+
+          FIXTURE_VERSION=$(aws s3api head-object \
+            --bucket ${S3_BUCKET} \
+            --key batch-scraper/fixture_updater.zip \
+            --query 'VersionId' \
+            --output text)
+
+          echo "odds_updater version: $ODDS_VERSION"
+          echo "fixture_updater version: $FIXTURE_VERSION"
+
+          echo "odds_version=$ODDS_VERSION" >> "$GITHUB_OUTPUT"
+          echo "fixture_version=$FIXTURE_VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Update Lambda Functions (if deployed)
+        run: |
+          set -e
+          echo ""
+          echo "Checking if Lambda functions exist and updating..."
+
+          # Update odds_updater if it exists
+          if aws lambda get-function --function-name sipap-dev-odds-updater >/dev/null 2>&1; then
+            echo "Updating sipap-dev-odds-updater Lambda function..."
+            aws lambda update-function-code \
+              --function-name sipap-dev-odds-updater \
+              --s3-bucket ${S3_BUCKET} \
+              --s3-key batch-scraper/odds_updater.zip \
+              --publish
+            echo "✓ Updated sipap-dev-odds-updater"
+          else
+            echo "⚠️  Lambda function sipap-dev-odds-updater not found. Skipping update."
+            echo "ℹ️  Run 'terraform apply' in sipap-terraform/events to create it."
+          fi
+
+          echo ""
+
+          # Update fixture_updater if it exists
+          if aws lambda get-function --function-name sipap-dev-fixture-updater >/dev/null 2>&1; then
+            echo "Updating sipap-dev-fixture-updater Lambda function..."
+            aws lambda update-function-code \
+              --function-name sipap-dev-fixture-updater \
+              --s3-bucket ${S3_BUCKET} \
+              --s3-key batch-scraper/fixture_updater.zip \
+              --publish
+            echo "✓ Updated sipap-dev-fixture-updater"
+          else
+            echo "⚠️  Lambda function sipap-dev-fixture-updater not found. Skipping update."
+            echo "ℹ️  Run 'terraform apply' in sipap-terraform/events to create it."
+          fi
+
+          echo ""
+          echo "✓ Lambda update complete"
+          echo ""
+          echo "ℹ️  Lambda packages are available in S3:"
+          echo "   s3://${S3_BUCKET}/batch-scraper/odds_updater.zip"
+          echo "   s3://${S3_BUCKET}/batch-scraper/fixture_updater.zip"
