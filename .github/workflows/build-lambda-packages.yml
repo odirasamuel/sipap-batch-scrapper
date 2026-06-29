@@ -149,6 +149,9 @@ jobs:
           echo "Bucket: s3://${S3_BUCKET}/batch-scraper/"
           echo ""
 
+          # Change to batch-scraper directory
+          cd sipap-batch-scraper
+
           # Upload odds_updater
           aws s3 cp lambda_packages/odds_updater.zip \
             s3://${S3_BUCKET}/batch-scraper/odds_updater.zip \
