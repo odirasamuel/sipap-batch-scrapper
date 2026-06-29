@@ -334,13 +334,19 @@ class AuroraClient:
                 match.get('league_id')
             )
 
+            # Parse scheduled_at if it's a string (ISO 8601 format)
+            scheduled_at = match['scheduled_at']
+            if isinstance(scheduled_at, str):
+                # Parse ISO 8601 datetime string
+                scheduled_at = datetime.fromisoformat(scheduled_at.replace('Z', '+00:00'))
+
             match_records.append((
                 sport_id,
                 league_id,
                 match['external_id'],
                 home_team_id,
                 away_team_id,
-                match['scheduled_at'],
+                scheduled_at,
                 match.get('status', 'scheduled'),
                 match.get('home_score'),
                 match.get('away_score'),
