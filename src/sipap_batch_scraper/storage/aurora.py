@@ -155,44 +155,212 @@ class AuroraClient:
                 now
             )
 
+    async def _get_or_create_sport(self, sport_name: str) -> int:
+        """Get sport ID, creating if it doesn't exist."""
+        assert self._pool is not None
+
+        async with self._pool.acquire() as conn:
+            # Try to get existing sport
+            result = await conn.fetchrow(
+                "SELECT id FROM sports WHERE name = $1",
+                sport_name
+            )
+
+            if result:
+                return int(result['id'])
+
+            # Create new sport
+            result = await conn.fetchrow(
+                """
+                INSERT INTO sports (name, display_name, enabled)
+                VALUES ($1, $2, true)
+                ON CONFLICT (name) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """,
+                sport_name,
+                sport_name.replace('_', ' ').title()
+            )
+            assert result is not None
+            return int(result['id'])
+
+    async def _get_or_create_team(
+        self,
+        sport_id: int,
+        team_name: str,
+        external_id: str | None = None
+    ) -> str:
+        """Get team UUID, creating if it doesn't exist."""
+        assert self._pool is not None
+
+        async with self._pool.acquire() as conn:
+            # Try to find by external_id if provided
+            if external_id:
+                result = await conn.fetchrow(
+                    "SELECT id FROM teams WHERE sport_id = $1 AND external_id = $2",
+                    sport_id,
+                    external_id
+                )
+                if result:
+                    return str(result['id'])
+
+            # Try to find by name
+            result = await conn.fetchrow(
+                "SELECT id FROM teams WHERE sport_id = $1 AND name = $2",
+                sport_id,
+                team_name
+            )
+
+            if result:
+                return str(result['id'])
+
+            # Create new team
+            result = await conn.fetchrow(
+                """
+                INSERT INTO teams (sport_id, external_id, name, short_name)
+                VALUES ($1, $2, $3, $4)
+                RETURNING id
+                """,
+                sport_id,
+                external_id,
+                team_name,
+                team_name[:50] if team_name else None
+            )
+            return str(result['id'])
+
+    async def _get_or_create_league(
+        self,
+        sport_id: int,
+        league_name: str,
+        external_id: str | None = None
+    ) -> str:
+        """Get league UUID, creating if it doesn't exist."""
+        assert self._pool is not None
+
+        async with self._pool.acquire() as conn:
+            # Try to find by external_id if provided
+            if external_id:
+                result = await conn.fetchrow(
+                    "SELECT id FROM leagues WHERE sport_id = $1 AND external_id = $2",
+                    sport_id,
+                    external_id
+                )
+                if result:
+                    return str(result['id'])
+
+            # Try to find by name
+            result = await conn.fetchrow(
+                "SELECT id FROM leagues WHERE sport_id = $1 AND name = $2",
+                sport_id,
+                league_name
+            )
+
+            if result:
+                return str(result['id'])
+
+            # Create new league
+            result = await conn.fetchrow(
+                """
+                INSERT INTO leagues (sport_id, external_id, name, enabled)
+                VALUES ($1, $2, $3, true)
+                RETURNING id
+                """,
+                sport_id,
+                external_id,
+                league_name
+            )
+            return str(result['id'])
+
     async def batch_insert_matches(self, matches: list[dict[str, Any]]) -> None:
         """
-        Batch insert multiple matches.
+        Batch insert multiple matches with proper foreign key lookups.
+
+        This method works with the normalized schema by:
+        1. Ensuring sport exists (defaults to 'soccer')
+        2. Looking up or creating teams
+        3. Looking up or creating leagues
+        4. Inserting matches with foreign key references
 
         Args:
-            matches: List of match data dictionaries
+            matches: List of match data dictionaries with keys:
+                - external_id: External match ID from source
+                - home_team: Home team name
+                - away_team: Away team name
+                - scheduled_at: Match scheduled time
+                - league: League name
+                - source: Data source (football-data.org, thesportsdb, etc.)
+                - sport: Sport name (optional, defaults to 'soccer')
 
         Example:
             >>> await client.batch_insert_matches([
-            ...     {'external_id': '1', 'home_team': 'Arsenal', ...},
-            ...     {'external_id': '2', 'home_team': 'Liverpool', ...}
+            ...     {
+            ...         'external_id': '12345',
+            ...         'home_team': 'Arsenal',
+            ...         'away_team': 'Liverpool',
+            ...         'scheduled_at': '2024-01-15T15:00:00Z',
+            ...         'league': 'Premier League',
+            ...         'source': 'football-data.org',
+            ...         'sport': 'soccer'
+            ...     }
             ... ])
         """
         assert self._pool is not None, "Must call connect() before batch_insert_matches()"
+
+        if not matches:
+            return
+
+        # Get or create sport (default to soccer for sports data)
+        sport_id = await self._get_or_create_sport('soccer')
+
+        # Process each match to resolve foreign keys
+        match_records = []
+        for match in matches:
+            # Get or create teams
+            home_team_id = await self._get_or_create_team(
+                sport_id,
+                match['home_team'],
+                match.get('home_team_id')
+            )
+
+            away_team_id = await self._get_or_create_team(
+                sport_id,
+                match['away_team'],
+                match.get('away_team_id')
+            )
+
+            # Get or create league
+            league_id = await self._get_or_create_league(
+                sport_id,
+                match['league'],
+                match.get('league_id')
+            )
+
+            match_records.append((
+                sport_id,
+                league_id,
+                match['external_id'],
+                home_team_id,
+                away_team_id,
+                match['scheduled_at'],
+                match.get('status', 'scheduled'),
+                match.get('home_score'),
+                match.get('away_score'),
+                match.get('venue'),
+                datetime.now(UTC)
+            ))
+
+        # Batch insert all matches
         query = """
             INSERT INTO matches (
-                external_id, home_team, away_team, scheduled_at,
-                league, source, created_at
+                sport_id, league_id, external_id,
+                home_team_id, away_team_id, scheduled_at,
+                status, home_score, away_score, venue, created_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (external_id, source) DO NOTHING
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (sport_id, external_id) DO NOTHING
         """
-        now = datetime.now(UTC)
-        records = [
-            (
-                m['external_id'],
-                m['home_team'],
-                m['away_team'],
-                m['scheduled_at'],
-                m['league'],
-                m['source'],
-                now
-            )
-            for m in matches
-        ]
 
         async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+            await conn.executemany(query, match_records)
 
     async def insert_team_stats(self, team_stats: dict[str, Any]) -> None:
         """
