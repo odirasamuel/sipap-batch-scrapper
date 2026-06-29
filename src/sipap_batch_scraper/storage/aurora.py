@@ -337,8 +337,10 @@ class AuroraClient:
             # Parse scheduled_at if it's a string (ISO 8601 format)
             scheduled_at = match['scheduled_at']
             if isinstance(scheduled_at, str):
-                # Parse ISO 8601 datetime string
-                scheduled_at = datetime.fromisoformat(scheduled_at.replace('Z', '+00:00'))
+                # Parse ISO 8601 datetime string, convert to UTC, remove timezone
+                # (database TIMESTAMP column is timezone-naive, expects UTC times)
+                parsed = datetime.fromisoformat(scheduled_at.replace('Z', '+00:00'))
+                scheduled_at = parsed.replace(tzinfo=None)
 
             match_records.append((
                 sport_id,
