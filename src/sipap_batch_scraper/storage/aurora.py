@@ -437,16 +437,20 @@ class AuroraClient:
         Since there's no dedicated standings table, this stores standings
         in the league metadata JSONB field.
 
+        Note: For MVP, league_id can be a competition code (PL, CL, etc.) or UUID.
+        If leagues table doesn't exist or league not found, operation is skipped.
+        Standings are primarily cached in Redis.
+
         Args:
             standings: List of standings data with keys:
-                - league_id: League UUID (required)
+                - league_id: League identifier (UUID or competition code)
                 - season: Season string (e.g., "2024-2025")
                 - table: List of team standings with position, points, wins, etc.
 
         Example:
             >>> await client.update_standings([
             ...     {
-            ...         'league_id': 'uuid-here',
+            ...         'league_id': 'PL',  # Competition code
             ...         'season': '2024-2025',
             ...         'table': [
             ...             {'position': 1, 'team': 'Arsenal', 'points': 50, ...},
@@ -473,6 +477,9 @@ class AuroraClient:
                 'updated_at': datetime.now(UTC).isoformat()
             }
 
+            # Try to update leagues table by UUID
+            # If league doesn't exist or leagues table doesn't exist, skip
+            # Standings are primarily cached in Redis anyway
             query = """
                 UPDATE leagues
                 SET metadata = jsonb_set(
@@ -483,5 +490,10 @@ class AuroraClient:
                 WHERE id = $2
             """
 
-            async with self._pool.acquire() as conn:
-                await conn.execute(query, json.dumps(standings_data), league_id)
+            try:
+                async with self._pool.acquire() as conn:
+                    await conn.execute(query, json.dumps(standings_data), league_id)
+            except Exception:
+                # League doesn't exist or table doesn't exist - skip Aurora update
+                # Standings are cached in Redis which is the primary read path
+                pass

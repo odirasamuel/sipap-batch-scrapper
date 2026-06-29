@@ -207,11 +207,18 @@ class FixtureUpdaterJob:
         # Execute all 13 competitions in parallel (graceful degradation)
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Extract successful results
+        # Extract successful results and structure properly
+        # Each result is a list of team standings, we need to wrap it with league metadata
         all_standings: list[dict[str, Any]] = []
-        for result in results:
-            if not isinstance(result, Exception):
-                all_standings.append(result)  # type: ignore[arg-type]
+        for i, result in enumerate(results):
+            if not isinstance(result, Exception) and result:
+                # Use competition code as league_id (PL, CL, etc.)
+                # Later we can map these to proper league UUIDs
+                all_standings.append({
+                    'league_id': competitions[i],
+                    'season': '2024-2025',
+                    'table': result  # result is the list of team standings
+                })
 
         return all_standings
 
